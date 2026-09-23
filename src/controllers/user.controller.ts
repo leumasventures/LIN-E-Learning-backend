@@ -1,110 +1,59 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
+import {
+  findUserById,
+  publicUser,
+  users,
+  type Role,
+} from "../data/users.js";
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
+export function getUsers(_req: Request, res: Response): void {
+  res.json({
+    count: users.length,
+    users: users.map(publicUser),
+  });
 }
 
-// Temporary data.
-// This will later come from PostgreSQL.
-const users: User[] = [];
-
-export const getUsers = (
-  _req: Request,
-  res: Response
-): void => {
-  res.status(200).json({
-    success: true,
-    count: users.length,
-    users
-  });
-};
-
-export const getUserById = (
-  req: Request,
-  res: Response
-): void => {
-  const { id } = req.params;
-
-  const user = users.find((item) => item.id === id);
-
+export function getUserById(req: Request, res: Response): void {
+  const user = findUserById(String(req.params.id));
   if (!user) {
-    res.status(404).json({
-      success: false,
-      message: "User not found"
-    });
+    res.status(404).json({ message: "User not found" });
+    return;
+  }
+  res.json({ user: publicUser(user) });
+}
+
+export function updateUser(req: Request, res: Response): void {
+  const user = findUserById(String(req.params.id));
+  if (!user) {
+    res.status(404).json({ message: "User not found" });
     return;
   }
 
-  res.status(200).json({
-    success: true,
-    user
-  });
-};
-
-export const updateUser = (
-  req: Request,
-  res: Response
-): void => {
-  const { id } = req.params;
-
-  const userIndex = users.findIndex(
-    (item) => item.id === id
-  );
-
-  if (userIndex === -1) {
-    res.status(404).json({
-      success: false,
-      message: "User not found"
-    });
+  // Students can only update themselves
+  if (req.userRole === "student" && req.userId !== user.id) {
+    res.status(403).json({ message: "Forbidden" });
     return;
   }
 
-  const { name, email, role } = req.body;
+  const { name, email, matric } = req.body || {};
+  if (name) user.name = String(name).trim();
+  if (email) user.email = String(email).trim().toLowerCase();
+  if (matric !== undefined) user.matric = matric ? String(matric).trim() : null;
 
-  if (name) {
-    users[userIndex].name = name;
+  // Only admin can change role
+  if (req.body?.role && req.userRole === "admin") {
+    user.role = req.body.role as Role;
   }
 
-  if (email) {
-    users[userIndex].email = email;
-  }
+  res.json({ message: "User updated successfully", user: publicUser(user) });
+}
 
-  if (role) {
-    users[userIndex].role = role;
-  }
-
-  res.status(200).json({
-    success: true,
-    message: "User updated successfully",
-    user: users[userIndex]
-  });
-};
-
-export const deleteUser = (
-  req: Request,
-  res: Response
-): void => {
-  const { id } = req.params;
-
-  const userIndex = users.findIndex(
-    (item) => item.id === id
-  );
-
-  if (userIndex === -1) {
-    res.status(404).json({
-      success: false,
-      message: "User not found"
-    });
+export function deleteUser(req: Request, res: Response): void {
+  const index = users.findIndex((u) => u.id === req.params.id);
+  if (index === -1) {
+    res.status(404).json({ message: "User not found" });
     return;
   }
-
-  users.splice(userIndex, 1);
-
-  res.status(200).json({
-    success: true,
-    message: "User deleted successfully"
-  });
-};
+  users.splice(index, 1);
+  res.json({ message: "User deleted successfully" });
+}

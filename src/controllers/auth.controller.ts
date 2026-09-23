@@ -1,156 +1,151 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import {
+  findUserById,
+  findUserByIdentifier,
+  publicUser,
+  refreshStore,
+  users,
+  type Role,
+  type UserRecord,
+} from "../data/users.js";
+import { signAccess, signRefresh, verifyRefresh } from "../utils/tokens.js";
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  password: string;
-  role: "student" | "teacher" | "admin";
+const ALLOWED_ROLES: Role[] = ["student", "admin", "lecturer"];
+
+export async function login(req: Request, res: Response): Promise<void> {
+  try {
+    const { email, password, role } = req.body || {};
+
+    if (!email || !password) {
+      res.status(400).json({ message: "Email and password are required" });
+      return;
+    }
+
+    const user = findUserByIdentifier(String(email));
+    if (!user || !user.isActive) {
+      res.status(401).json({ message: "Invalid credentials" });
+      return;
+    }
+
+    const ok = await bcrypt.compare(String(password), user.passwordHash);
+    if (!ok) {
+      res.status(401).json({ message: "Invalid credentials" });
+      return;
+    }
+
+    if (role && role !== user.role) {
+      res.status(403).json({
+        message: `This account is a ${user.role}, not a ${role}`,
+      });
+      return;
+    }
+
+    res.json({
+      user: publicUser(user),
+      accessToken: signAccess(user),
+      refreshToken: signRefresh(user),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
 }
 
-// Temporary users array.
-// We will replace this with PostgreSQL + Prisma later.
-const users: User[] = [];
-
-export const register = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export async function register(req: Request, res: Response): Promise<void> {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, matric } = req.body || {};
 
     if (!name || !email || !password) {
       res.status(400).json({
-        success: false,
-        message: "Name, email and password are required"
+        message: "Name, email and password are required",
       });
       return;
     }
 
-    const existingUser = users.find(
-      (user) => user.email.toLowerCase() === email.toLowerCase()
-    );
-
-    if (existingUser) {
-      res.status(409).json({
-        success: false,
-        message: "User with this email already exists"
+    if (String(password).length < 8) {
+      res.status(400).json({
+        message: "Password must be at least 8 characters",
       });
       return;
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const normalizedEmail = String(email).trim().toLowerCase();
+    if (findUserByIdentifier(normalizedEmail)) {
+      res.status(409).json({ message: "User with this email already exists" });
+      return;
+    }
 
-    const newUser: User = {
-      id: Date.now().toString(),
-      name,
-      email: email.toLowerCase(),
-      password: hashedPassword,
-      role: role || "student"
+    const assignedRole: Role =
+      role && ALLOWED_ROLES.includes(role) ? role : "student";
+
+    // Only admins should create admin/lecturer in production — open for demo
+    const passwordHash = await bcrypt.hash(String(password), 10);
+
+    const newUser: UserRecord = {
+      id: String(Date.now()),
+      name: String(name).trim(),
+      email: normalizedEmail,
+      matric: matric ? String(matric).trim() : null,
+      role: assignedRole,
+      tenantName: "SAHARCO",
+      passwordHash,
+      isActive: true,
     };
 
     users.push(newUser);
 
     res.status(201).json({
-      success: true,
       message: "Registration successful",
-      user: {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role
-      }
+      user: publicUser(newUser),
+      accessToken: signAccess(newUser),
+      refreshToken: signRefresh(newUser),
     });
   } catch (error) {
     console.error(error);
-
-    res.status(500).json({
-      success: false,
-      message: "Server error"
-    });
+    res.status(500).json({ message: "Server error" });
   }
-};
+}
 
-export const login = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export function refresh(req: Request, res: Response): void {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      res.status(400).json({
-        success: false,
-        message: "Email and password are required"
-      });
+    const { refreshToken } = req.body || {};
+    if (!refreshToken || !refreshStore.has(refreshToken)) {
+      res.status(401).json({ message: "Invalid refresh token" });
       return;
     }
 
-    const user = users.find(
-      (item) => item.email.toLowerCase() === email.toLowerCase()
-    );
-
-    if (!user) {
-      res.status(401).json({
-        success: false,
-        message: "Invalid email or password"
-      });
+    const payload = verifyRefresh(refreshToken);
+    const user = findUserById(String(payload.sub));
+    if (!user || !user.isActive) {
+      refreshStore.delete(refreshToken);
+      res.status(401).json({ message: "User not found" });
       return;
     }
 
-    const passwordMatch = await bcrypt.compare(
-      password,
-      user.password
-    );
-
-    if (!passwordMatch) {
-      res.status(401).json({
-        success: false,
-        message: "Invalid email or password"
-      });
-      return;
-    }
-
-    const secret = process.env.JWT_SECRET;
-
-    if (!secret) {
-      res.status(500).json({
-        success: false,
-        message: "JWT_SECRET is not configured"
-      });
-      return;
-    }
-
-    const token = jwt.sign(
-      {
-        id: user.id,
-        role: user.role
-      },
-      secret,
-      {
-        expiresIn: "7d"
-      }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: "Login successful",
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      }
+    refreshStore.delete(refreshToken);
+    res.json({
+      accessToken: signAccess(user),
+      refreshToken: signRefresh(user),
     });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      message: "Server error"
-    });
+  } catch {
+    const { refreshToken } = req.body || {};
+    if (refreshToken) refreshStore.delete(refreshToken);
+    res.status(401).json({ message: "Invalid refresh token" });
   }
-};
+}
+
+export function me(req: Request, res: Response): void {
+  const user = findUserById(String(req.userId));
+  if (!user) {
+    res.status(404).json({ message: "User not found" });
+    return;
+  }
+  res.json(publicUser(user));
+}
+
+export function logout(req: Request, res: Response): void {
+  const { refreshToken } = req.body || {};
+  if (refreshToken) refreshStore.delete(refreshToken);
+  res.json({ ok: true });
+}

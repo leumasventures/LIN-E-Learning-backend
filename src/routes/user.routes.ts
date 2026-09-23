@@ -1,20 +1,20 @@
 import { Router } from "express";
-
 import {
   getUsers,
   getUserById,
   updateUser,
-  deleteUser
+  deleteUser,
 } from "../controllers/user.controller.js";
+import { authenticate } from "../middleware/auth.middleware.js";
+import { requireRoles } from "../middleware/role.middleware.js";
 
 const router = Router();
 
-router.get("/", getUsers);
+router.use(authenticate);
 
+router.get("/", requireRoles("admin"), getUsers);
 router.get("/:id", getUserById);
-
 router.put("/:id", updateUser);
-
-router.delete("/:id", deleteUser);
+router.delete("/:id", requireRoles("admin"), deleteUser);
 
 export default router;
