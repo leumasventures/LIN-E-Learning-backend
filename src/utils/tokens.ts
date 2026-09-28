@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
-import { refreshStore, type UserRecord } from "../data/users.js";
+import { refreshStore, type UserRecord } from "../data/store.js";
 
 export function signAccess(user: UserRecord): string {
   return jwt.sign(
@@ -18,10 +18,10 @@ export function signRefresh(user: UserRecord): string {
   return token;
 }
 
-export function verifyAccess(token: string): jwt.JwtPayload {
+export function verifyAccess(token: string) {
   return jwt.verify(token, env.accessSecret) as jwt.JwtPayload;
 }
 
-export function verifyRefresh(token: string): jwt.JwtPayload {
+export function verifyRefresh(token: string) {
   return jwt.verify(token, env.refreshSecret) as jwt.JwtPayload;
 }

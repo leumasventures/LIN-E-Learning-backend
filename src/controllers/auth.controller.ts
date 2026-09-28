@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 import {
   findUserById,
   findUserByIdentifier,
+  insertUser,
   publicUser,
   refreshStore,
-  users,
   type Role,
   type UserRecord,
 } from "../data/users.js";
@@ -22,7 +23,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const user = findUserByIdentifier(String(email));
+    const user = await findUserByIdentifier(String(email));
     if (!user || !user.isActive) {
       res.status(401).json({ message: "Invalid credentials" });
       return;
@@ -71,9 +72,18 @@ export async function register(req: Request, res: Response): Promise<void> {
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
-    if (findUserByIdentifier(normalizedEmail)) {
+    const existing = await findUserByIdentifier(normalizedEmail);
+    if (existing) {
       res.status(409).json({ message: "User with this email already exists" });
       return;
+    }
+
+    if (matric) {
+      const byMatric = await findUserByIdentifier(String(matric));
+      if (byMatric) {
+        res.status(409).json({ message: "User with this matric already exists" });
+        return;
+      }
     }
 
     const assignedRole: Role =
@@ -81,9 +91,10 @@ export async function register(req: Request, res: Response): Promise<void> {
 
     // Only admins should create admin/lecturer in production — open for demo
     const passwordHash = await bcrypt.hash(String(password), 10);
+    const id = randomUUID();
 
     const newUser: UserRecord = {
-      id: String(Date.now()),
+      id,
       name: String(name).trim(),
       email: normalizedEmail,
       matric: matric ? String(matric).trim() : null,
@@ -93,7 +104,16 @@ export async function register(req: Request, res: Response): Promise<void> {
       isActive: true,
     };
 
-    users.push(newUser);
+    try {
+      await insertUser(newUser);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === "ER_DUP_ENTRY") {
+        res.status(409).json({ message: "User with this email or matric already exists" });
+        return;
+      }
+      throw err;
+    }
 
     res.status(201).json({
       message: "Registration successful",
@@ -107,7 +127,7 @@ export async function register(req: Request, res: Response): Promise<void> {
   }
 }
 
-export function refresh(req: Request, res: Response): void {
+export async function refresh(req: Request, res: Response): Promise<void> {
   try {
     const { refreshToken } = req.body || {};
     if (!refreshToken || !refreshStore.has(refreshToken)) {
@@ -116,7 +136,7 @@ export function refresh(req: Request, res: Response): void {
     }
 
     const payload = verifyRefresh(refreshToken);
-    const user = findUserById(String(payload.sub));
+    const user = await findUserById(String(payload.sub));
     if (!user || !user.isActive) {
       refreshStore.delete(refreshToken);
       res.status(401).json({ message: "User not found" });
@@ -135,13 +155,18 @@ export function refresh(req: Request, res: Response): void {
   }
 }
 
-export function me(req: Request, res: Response): void {
-  const user = findUserById(String(req.userId));
-  if (!user) {
-    res.status(404).json({ message: "User not found" });
-    return;
+export async function me(req: Request, res: Response): Promise<void> {
+  try {
+    const user = await findUserById(String(req.userId));
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+    res.json(publicUser(user));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
-  res.json(publicUser(user));
 }
 
 export function logout(req: Request, res: Response): void {

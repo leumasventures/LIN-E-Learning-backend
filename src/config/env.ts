@@ -16,4 +16,10 @@ export const env = {
   accessTtl: process.env.ACCESS_TOKEN_TTL || "15m",
   refreshTtl: process.env.REFRESH_TOKEN_TTL || "7d",
   corsOrigin: process.env.CORS_ORIGIN || true,
+
+  dbHost: process.env.DB_HOST || "https://elerning.leumasitnexus.com",
+  dbPort: Number(process.env.DB_PORT) || 3306,
+  dbUser: required("DB_USER"),
+  dbPassword: required("DB_PASSWORD"),
+  dbName: required("DB_NAME"),
 };
