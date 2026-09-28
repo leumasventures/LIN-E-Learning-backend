@@ -1,4 +1,4 @@
-import type { RowDataPacket } from "mysql2";
+import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { pool } from "../config/db.js";
 
 export type Role = "student" | "admin" | "lecturer";
@@ -16,6 +16,10 @@ export interface UserRecord {
 
 /** token -> userId (in-memory for now) */
 export const refreshStore = new Map<string, string>();
+
+/** Values accepted by mysql2 named placeholders */
+type SqlParam = string | number | boolean | null;
+type SqlParams = Record<string, SqlParam>;
 
 interface UserRow extends RowDataPacket {
   id: string;
@@ -57,7 +61,7 @@ export async function findUserByIdentifier(
     `${USER_SELECT}
      WHERE (LOWER(email) = :id OR (matric IS NOT NULL AND LOWER(matric) = :id))
      LIMIT 1`,
-    { id: key }
+    { id: key } satisfies SqlParams
   );
   return rows[0] ? mapRow(rows[0]) : undefined;
 }
@@ -65,7 +69,7 @@ export async function findUserByIdentifier(
 export async function findUserById(id: string): Promise<UserRecord | undefined> {
   const [rows] = await pool.execute<UserRow[]>(
     `${USER_SELECT} WHERE id = :id LIMIT 1`,
-    { id }
+    { id } satisfies SqlParams
   );
   return rows[0] ? mapRow(rows[0]) : undefined;
 }
@@ -95,7 +99,7 @@ export async function insertUser(user: {
       role: user.role,
       tenantName: user.tenantName,
       passwordHash: user.passwordHash,
-    }
+    } satisfies SqlParams
   );
 }
 
@@ -109,7 +113,7 @@ export async function updateUserFields(
   }
 ): Promise<boolean> {
   const sets: string[] = [];
-  const params: Record<string, unknown> = { id };
+  const params: SqlParams = { id };
 
   if (fields.name !== undefined) {
     sets.push("name = :name");
@@ -130,18 +134,19 @@ export async function updateUserFields(
 
   if (sets.length === 0) return true;
 
-  const [result] = await pool.execute(
+  const [result] = await pool.execute<ResultSetHeader>(
     `UPDATE users SET ${sets.join(", ")} WHERE id = :id`,
     params
   );
-  return (result as { affectedRows?: number }).affectedRows !== 0;
+  return result.affectedRows !== 0;
 }
 
 export async function deleteUserById(id: string): Promise<boolean> {
-  const [result] = await pool.execute(`DELETE FROM users WHERE id = :id`, {
-    id,
-  });
-  return (result as { affectedRows?: number }).affectedRows !== 0;
+  const [result] = await pool.execute<ResultSetHeader>(
+    `DELETE FROM users WHERE id = :id`,
+    { id } satisfies SqlParams
+  );
+  return result.affectedRows !== 0;
 }
 
 export function publicUser(u: UserRecord) {
