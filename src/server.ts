@@ -26,6 +26,10 @@ app.listen(env.port, () => {
   console.log("  student:  chinedu.okafor@student.edu | CSC/2023/041");
   console.log("  admin:    admin@school.edu");
   console.log("  lecturer: a.obi@school.edu");
+  // top of server.ts, before other imports that use env
+  console.log("DB_USER set?", Boolean(process.env.DB_USER));
+  console.log("DB_NAME set?", Boolean(process.env.DB_NAME));
+  console.log("cwd", process.cwd());
 });
 
 async function start() {
