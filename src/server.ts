@@ -21,7 +21,7 @@ app.use(notFound);
 app.use(errorHandler);
 
 app.listen(env.port, () => {
-  console.log(`API listening on https://elerning.leumasitnexus.com:${env.port}`);
+  console.log(`API listening on https://elearning.leumasitnexus.com:${env.port}`);
   console.log("Demo (password: Password123!):");
   console.log("  student:  chinedu.okafor@student.edu | CSC/2023/041");
   console.log("  admin:    admin@school.edu");
@@ -41,7 +41,7 @@ async function start() {
   }
 
   app.listen(env.port, () => {
-    console.log(`API listening on https://elerning.leumasitnexus.com:${env.port}`);
+    console.log(`API listening on https://elearning.leumasitnexus.com:${env.port}`);
   });
 }
 
