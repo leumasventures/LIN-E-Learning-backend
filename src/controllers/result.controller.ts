@@ -1,29 +1,39 @@
 import type { Request, Response } from "express";
-import { courses, exams, results, users } from "../data/store.js";
+import { findCourseById } from "../data/courses.js";
+import { findExamById, findResults } from "../data/exams.js";
+import { findUserById } from "../data/users.js";
 
-export function listResults(req: Request, res: Response): void {
-  let list = results;
-  if (req.userRole === "student") {
-    list = list.filter((r) => r.userId === req.userId);
-  } else if (req.query.userId) {
-    list = list.filter((r) => r.userId === req.query.userId);
+export async function listResults(req: Request, res: Response): Promise<void> {
+  try {
+    const filters: { userId?: string; courseId?: string } = {};
+    if (req.userRole === "student") {
+      filters.userId = req.userId;
+    } else if (req.query.userId) {
+      filters.userId = String(req.query.userId);
+    }
+    if (req.query.courseId) {
+      filters.courseId = String(req.query.courseId);
+    }
+    const list = await findResults(filters);
+    const enriched = await Promise.all(
+      list.map(async (r) => {
+        const user = await findUserById(r.userId);
+        const exam = await findExamById(r.examId);
+        const course = await findCourseById(r.courseId);
+        const percent = r.total ? Math.round((r.score / r.total) * 100) : 0;
+        return {
+          ...r,
+          student: user?.name,
+          matric: user?.matric,
+          examTitle: exam?.title,
+          courseCode: course?.code,
+          percent,
+        };
+      })
+    );
+    res.json({ count: enriched.length, results: enriched });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
-  if (req.query.courseId) {
-    list = list.filter((r) => r.courseId === req.query.courseId);
-  }
-  const enriched = list.map((r) => {
-    const user = users.find((u) => u.id === r.userId);
-    const exam = exams.find((e) => e.id === r.examId);
-    const course = courses.find((c) => c.id === r.courseId);
-    const percent = r.total ? Math.round((r.score / r.total) * 100) : 0;
-    return {
-      ...r,
-      student: user?.name,
-      matric: user?.matric,
-      examTitle: exam?.title,
-      courseCode: course?.code,
-      percent,
-    };
-  });
-  res.json({ count: enriched.length, results: enriched });
 }

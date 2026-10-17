@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "crypto";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import { pool } from "../config/db.js";
 
@@ -14,10 +15,6 @@ export interface UserRecord {
   isActive: boolean;
 }
 
-/** token -> userId (in-memory for now) */
-export const refreshStore = new Map<string, string>();
-
-/** Values accepted by mysql2 named placeholders */
 type SqlParam = string | number | boolean | null;
 type SqlParams = Record<string, SqlParam>;
 
@@ -77,6 +74,14 @@ export async function findUserById(id: string): Promise<UserRecord | undefined> 
 export async function findAllUsers(): Promise<UserRecord[]> {
   const [rows] = await pool.execute<UserRow[]>(USER_SELECT);
   return rows.map(mapRow);
+}
+
+export async function countUsersByRole(role: Role): Promise<number> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT COUNT(*) AS c FROM users WHERE role = :role AND is_active = 1`,
+    { role } satisfies SqlParams
+  );
+  return Number(rows[0]?.c ?? 0);
 }
 
 export async function insertUser(user: {
@@ -158,4 +163,49 @@ export function publicUser(u: UserRecord) {
     matric: u.matric,
     tenantName: u.tenantName,
   };
+}
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export async function storeRefreshToken(
+  userId: string,
+  token: string,
+  expiresAt: Date
+): Promise<void> {
+  await pool.execute(
+    `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
+     VALUES (:id, :userId, :tokenHash, :expiresAt)`,
+    {
+      id: randomUUID(),
+      userId,
+      tokenHash: hashToken(token),
+      expiresAt: expiresAt.toISOString().slice(0, 19).replace("T", " "),
+    } satisfies SqlParams
+  );
+}
+
+export async function hasValidRefreshToken(token: string): Promise<boolean> {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT 1 AS ok FROM refresh_tokens
+     WHERE token_hash = :tokenHash AND expires_at > NOW()
+     LIMIT 1`,
+    { tokenHash: hashToken(token) } satisfies SqlParams
+  );
+  return rows.length > 0;
+}
+
+export async function revokeRefreshToken(token: string): Promise<void> {
+  await pool.execute(
+    `DELETE FROM refresh_tokens WHERE token_hash = :tokenHash`,
+    { tokenHash: hashToken(token) } satisfies SqlParams
+  );
+}
+
+export async function revokeAllRefreshTokensForUser(userId: string): Promise<void> {
+  await pool.execute(
+    `DELETE FROM refresh_tokens WHERE user_id = :userId`,
+    { userId } satisfies SqlParams
+  );
 }

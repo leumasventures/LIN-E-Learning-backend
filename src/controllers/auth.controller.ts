@@ -4,9 +4,10 @@ import { randomUUID } from "crypto";
 import {
   findUserById,
   findUserByIdentifier,
+  hasValidRefreshToken,
   insertUser,
   publicUser,
-  refreshStore,
+  revokeRefreshToken,
   type Role,
   type UserRecord,
 } from "../data/users.js";
@@ -45,7 +46,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     res.json({
       user: publicUser(user),
       accessToken: signAccess(user),
-      refreshToken: signRefresh(user),
+      refreshToken: await signRefresh(user),
     });
   } catch (error) {
     console.error(error);
@@ -89,7 +90,6 @@ export async function register(req: Request, res: Response): Promise<void> {
     const assignedRole: Role =
       role && ALLOWED_ROLES.includes(role) ? role : "student";
 
-    // Only admins should create admin/lecturer in production — open for demo
     const passwordHash = await bcrypt.hash(String(password), 10);
     const id = randomUUID();
 
@@ -119,7 +119,7 @@ export async function register(req: Request, res: Response): Promise<void> {
       message: "Registration successful",
       user: publicUser(newUser),
       accessToken: signAccess(newUser),
-      refreshToken: signRefresh(newUser),
+      refreshToken: await signRefresh(newUser),
     });
   } catch (error) {
     console.error(error);
@@ -130,27 +130,27 @@ export async function register(req: Request, res: Response): Promise<void> {
 export async function refresh(req: Request, res: Response): Promise<void> {
   try {
     const { refreshToken } = req.body || {};
-    if (!refreshToken || !refreshStore.has(refreshToken)) {
+    if (!refreshToken || !(await hasValidRefreshToken(String(refreshToken)))) {
       res.status(401).json({ message: "Invalid refresh token" });
       return;
     }
 
-    const payload = verifyRefresh(refreshToken);
+    const payload = verifyRefresh(String(refreshToken));
     const user = await findUserById(String(payload.sub));
     if (!user || !user.isActive) {
-      refreshStore.delete(refreshToken);
+      await revokeRefreshToken(String(refreshToken));
       res.status(401).json({ message: "User not found" });
       return;
     }
 
-    refreshStore.delete(refreshToken);
+    await revokeRefreshToken(String(refreshToken));
     res.json({
       accessToken: signAccess(user),
-      refreshToken: signRefresh(user),
+      refreshToken: await signRefresh(user),
     });
   } catch {
     const { refreshToken } = req.body || {};
-    if (refreshToken) refreshStore.delete(refreshToken);
+    if (refreshToken) await revokeRefreshToken(String(refreshToken)).catch(() => {});
     res.status(401).json({ message: "Invalid refresh token" });
   }
 }
@@ -169,8 +169,10 @@ export async function me(req: Request, res: Response): Promise<void> {
   }
 }
 
-export function logout(req: Request, res: Response): void {
+export async function logout(req: Request, res: Response): Promise<void> {
   const { refreshToken } = req.body || {};
-  if (refreshToken) refreshStore.delete(refreshToken);
+  if (refreshToken) {
+    await revokeRefreshToken(String(refreshToken)).catch(() => {});
+  }
   res.json({ ok: true });
 }

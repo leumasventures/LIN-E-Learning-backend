@@ -1,53 +1,90 @@
 import type { Request, Response } from "express";
-import { lessons, nextId, type LessonRecord } from "../data/store.js";
+import { randomUUID } from "crypto";
+import {
+  countLessonsForCourse,
+  deleteLessonById,
+  findLessonById,
+  findLessons,
+  insertLesson,
+  updateLessonFields,
+  type LessonRecord,
+} from "../data/lessons.js";
+import { findCourseById } from "../data/courses.js";
 
-export function listLessons(req: Request, res: Response): void {
-  const courseId = req.query.courseId as string | undefined;
-  let list = lessons;
-  if (courseId) list = list.filter((l) => l.courseId === courseId);
-  list = [...list].sort((a, b) => a.order - b.order);
-  res.json({ count: list.length, lessons: list });
+export async function listLessons(req: Request, res: Response): Promise<void> {
+  try {
+    const courseId = req.query.courseId as string | undefined;
+    const list = await findLessons(courseId);
+    res.json({ count: list.length, lessons: list });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
 }
 
-export function createLesson(req: Request, res: Response): void {
-  const { courseId, title, duration, content, order } = req.body || {};
-  if (!courseId || !title) {
-    res.status(400).json({ message: "courseId and title are required" });
-    return;
+export async function createLesson(req: Request, res: Response): Promise<void> {
+  try {
+    const { courseId, title, duration, content, order } = req.body || {};
+    if (!courseId || !title) {
+      res.status(400).json({ message: "courseId and title are required" });
+      return;
+    }
+    const course = await findCourseById(String(courseId));
+    if (!course) {
+      res.status(404).json({ message: "Course not found" });
+      return;
+    }
+    const nextOrder =
+      order !== undefined
+        ? Number(order)
+        : (await countLessonsForCourse(String(courseId))) + 1;
+    const lesson: LessonRecord = {
+      id: randomUUID(),
+      courseId: String(courseId),
+      title: String(title),
+      duration: duration || "10 min",
+      order: nextOrder,
+      content: content || "",
+    };
+    await insertLesson(lesson);
+    res.status(201).json({ lesson });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
-  const lesson: LessonRecord = {
-    id: nextId("l"),
-    courseId,
-    title,
-    duration: duration || "10 min",
-    order: Number(order) || lessons.filter((l) => l.courseId === courseId).length + 1,
-    content: content || "",
-  };
-  lessons.push(lesson);
-  res.status(201).json({ lesson });
 }
 
-export function updateLesson(req: Request, res: Response): void {
-  const lesson = lessons.find((l) => l.id === req.params.id);
-  if (!lesson) {
-    res.status(404).json({ message: "Lesson not found" });
-    return;
+export async function updateLesson(req: Request, res: Response): Promise<void> {
+  try {
+    const lesson = await findLessonById(String(req.params.id));
+    if (!lesson) {
+      res.status(404).json({ message: "Lesson not found" });
+      return;
+    }
+    await updateLessonFields(lesson.id, {
+      ...(req.body.title && { title: req.body.title }),
+      ...(req.body.duration && { duration: req.body.duration }),
+      ...(req.body.content !== undefined && { content: req.body.content }),
+      ...(req.body.order !== undefined && { order: Number(req.body.order) }),
+    });
+    const updated = await findLessonById(lesson.id);
+    res.json({ lesson: updated });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
-  Object.assign(lesson, {
-    ...(req.body.title && { title: req.body.title }),
-    ...(req.body.duration && { duration: req.body.duration }),
-    ...(req.body.content !== undefined && { content: req.body.content }),
-    ...(req.body.order !== undefined && { order: Number(req.body.order) }),
-  });
-  res.json({ lesson });
 }
 
-export function deleteLesson(req: Request, res: Response): void {
-  const i = lessons.findIndex((l) => l.id === req.params.id);
-  if (i === -1) {
-    res.status(404).json({ message: "Lesson not found" });
-    return;
+export async function deleteLesson(req: Request, res: Response): Promise<void> {
+  try {
+    const ok = await deleteLessonById(String(req.params.id));
+    if (!ok) {
+      res.status(404).json({ message: "Lesson not found" });
+      return;
+    }
+    res.json({ message: "Deleted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
-  lessons.splice(i, 1);
-  res.json({ message: "Deleted" });
 }

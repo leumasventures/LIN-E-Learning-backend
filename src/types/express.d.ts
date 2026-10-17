@@ -1,4 +1,4 @@
-import type { Role } from "../data/store.js";
+import type { Role } from "../data/users.js";
 
 declare global {
   namespace Express {
