@@ -175,14 +175,13 @@ export async function storeRefreshToken(
   expiresAt: Date
 ): Promise<void> {
   await pool.execute(
-    `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
-     VALUES (:id, :userId, :tokenHash, :expiresAt)`,
+    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+     VALUES (:userId, :tokenHash, :expiresAt)`,
     {
-      id: randomUUID(),
       userId,
       tokenHash: hashToken(token),
       expiresAt: expiresAt.toISOString().slice(0, 19).replace("T", " "),
-    } satisfies SqlParams
+    }
   );
 }
 
