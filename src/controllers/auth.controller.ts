@@ -11,7 +11,7 @@ import {
   type Role,
   type UserRecord,
 } from "../data/users.js";
-import { signAccess, signRefresh, verifyRefresh } from "../utils/tokens.js";
+import { signAccess, signRefresh, verifyAccess, verifyRefresh } from "../utils/tokens.js";
 
 const ALLOWED_ROLES: Role[] = ["student", "admin", "lecturer"];
 
@@ -54,6 +54,12 @@ export async function login(req: Request, res: Response): Promise<void> {
   }
 }
 
+/**
+ * Public signup always creates a student.
+ * Elevated roles (admin/lecturer) require a valid admin Bearer token.
+ * Tokens are only issued for the new user on public student self-signup
+ * (not when an admin creates an account on their behalf).
+ */
 export async function register(req: Request, res: Response): Promise<void> {
   try {
     const { name, email, password, role, matric } = req.body || {};
@@ -87,8 +93,28 @@ export async function register(req: Request, res: Response): Promise<void> {
       }
     }
 
-    const assignedRole: Role =
+    const requestedRole: Role =
       role && ALLOWED_ROLES.includes(role) ? role : "student";
+
+    let actorIsAdmin = false;
+    const header = req.headers.authorization || "";
+    if (header.startsWith("Bearer ")) {
+      try {
+        const payload = verifyAccess(header.slice(7));
+        actorIsAdmin = payload.role === "admin";
+      } catch {
+        actorIsAdmin = false;
+      }
+    }
+
+    if (requestedRole !== "student" && !actorIsAdmin) {
+      res.status(403).json({
+        message: "Only an authenticated admin can create admin or lecturer accounts",
+      });
+      return;
+    }
+
+    const assignedRole: Role = actorIsAdmin ? requestedRole : "student";
 
     const passwordHash = await bcrypt.hash(String(password), 10);
     const id = randomUUID();
@@ -109,10 +135,21 @@ export async function register(req: Request, res: Response): Promise<void> {
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
       if (code === "ER_DUP_ENTRY") {
-        res.status(409).json({ message: "User with this email or matric already exists" });
+        res.status(409).json({
+          message: "User with this email or matric already exists",
+        });
         return;
       }
       throw err;
+    }
+
+    // Admin creating on behalf of someone: return user only (do not switch session)
+    if (actorIsAdmin) {
+      res.status(201).json({
+        message: "User created successfully",
+        user: publicUser(newUser),
+      });
+      return;
     }
 
     res.status(201).json({
@@ -150,7 +187,9 @@ export async function refresh(req: Request, res: Response): Promise<void> {
     });
   } catch {
     const { refreshToken } = req.body || {};
-    if (refreshToken) await revokeRefreshToken(String(refreshToken)).catch(() => {});
+    if (refreshToken) {
+      await revokeRefreshToken(String(refreshToken)).catch(() => {});
+    }
     res.status(401).json({ message: "Invalid refresh token" });
   }
 }
