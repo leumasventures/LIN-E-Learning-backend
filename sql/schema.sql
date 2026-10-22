@@ -1,12 +1,11 @@
 -- =====================================================================
--- LIN E-Learning: database schema (MySQL 8.0+)
--- Full schema: users, refresh_tokens, courses, lessons, enrollments,
--- questions, exams, exam_questions, results.
--- Safe to re-run (CREATE TABLE IF NOT EXISTS).
+-- LIN E-Learning — complete MySQL 8.0+ schema
 -- =====================================================================
 
 SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
 
+-- users
 CREATE TABLE IF NOT EXISTS users (
   id            CHAR(36)     NOT NULL,
   name          VARCHAR(150) NOT NULL,
@@ -26,6 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
   KEY idx_users_tenant (tenant_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- refresh_tokens (MUST have column `id` — required for login)
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   id         CHAR(36)     NOT NULL,
   user_id    CHAR(36)     NOT NULL,
@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- courses
 CREATE TABLE IF NOT EXISTS courses (
   id              CHAR(36)     NOT NULL,
   code            VARCHAR(50)  NOT NULL,
@@ -52,13 +53,15 @@ CREATE TABLE IF NOT EXISTS courses (
   status          ENUM('Active','Draft') NOT NULL DEFAULT 'Active',
   description     TEXT         NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                             ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_courses_code (code),
   KEY idx_courses_status (status),
   KEY idx_courses_lecturer (lecturer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- lessons
 CREATE TABLE IF NOT EXISTS lessons (
   id         CHAR(36)     NOT NULL,
   course_id  CHAR(36)     NOT NULL,
@@ -67,13 +70,15 @@ CREATE TABLE IF NOT EXISTS lessons (
   sort_order INT          NOT NULL DEFAULT 1,
   content    TEXT         NOT NULL,
   created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                             ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_lessons_course (course_id),
   CONSTRAINT fk_lessons_course
     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- enrollments
 CREATE TABLE IF NOT EXISTS enrollments (
   id                 CHAR(36)  NOT NULL,
   user_id            CHAR(36)  NOT NULL,
@@ -82,7 +87,8 @@ CREATE TABLE IF NOT EXISTS enrollments (
   lessons_completed  INT       NOT NULL DEFAULT 0,
   enrolled_at        DATE      NOT NULL,
   created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                               ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_enrollment_user_course (user_id, course_id),
   KEY idx_enrollments_user (user_id),
@@ -93,6 +99,7 @@ CREATE TABLE IF NOT EXISTS enrollments (
     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- questions
 CREATE TABLE IF NOT EXISTS questions (
   id             CHAR(36)     NOT NULL,
   course_id      CHAR(36)     NOT NULL,
@@ -102,13 +109,15 @@ CREATE TABLE IF NOT EXISTS questions (
   correct_index  INT          NOT NULL DEFAULT 0,
   points         INT          NOT NULL DEFAULT 1,
   created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                             ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_questions_course (course_id),
   CONSTRAINT fk_questions_course
     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- exams
 CREATE TABLE IF NOT EXISTS exams (
   id                CHAR(36)     NOT NULL,
   title             VARCHAR(255) NOT NULL,
@@ -117,7 +126,8 @@ CREATE TABLE IF NOT EXISTS exams (
   start_date        DATETIME     NOT NULL,
   status            ENUM('Scheduled','Active','Closed') NOT NULL DEFAULT 'Scheduled',
   created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                             ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_exams_course (course_id),
   KEY idx_exams_status (status),
@@ -125,6 +135,7 @@ CREATE TABLE IF NOT EXISTS exams (
     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- exam_questions
 CREATE TABLE IF NOT EXISTS exam_questions (
   exam_id     CHAR(36) NOT NULL,
   question_id CHAR(36) NOT NULL,
@@ -137,6 +148,7 @@ CREATE TABLE IF NOT EXISTS exam_questions (
     FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- results
 CREATE TABLE IF NOT EXISTS results (
   id           CHAR(36)  NOT NULL,
   user_id      CHAR(36)  NOT NULL,
@@ -157,3 +169,5 @@ CREATE TABLE IF NOT EXISTS results (
   CONSTRAINT fk_results_course
     FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+SET FOREIGN_KEY_CHECKS = 1;
